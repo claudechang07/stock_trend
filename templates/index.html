@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>台灣股市趨勢查詢</title>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #1e1e2e;
+      color: #cdd6f4;
+      font-family: "Segoe UI", "Microsoft JhengHei", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    header {
+      width: 100%;
+      background: #181825;
+      padding: 20px 40px;
+      border-bottom: 1px solid #313244;
+      text-align: center;
+    }
+    header h1 { font-size: 1.6rem; color: #cba6f7; letter-spacing: 2px; }
+
+    .search-section {
+      margin: 36px auto 20px;
+      display: flex;
+      gap: 12px;
+      width: min(600px, 90vw);
+    }
+
+    #stock-input {
+      flex: 1;
+      padding: 12px 18px;
+      font-size: 1.1rem;
+      border: 2px solid #45475a;
+      border-radius: 10px;
+      background: #313244;
+      color: #cdd6f4;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    #stock-input:focus { border-color: #cba6f7; }
+
+    #search-btn {
+      padding: 12px 28px;
+      font-size: 1.05rem;
+      border: none;
+      border-radius: 10px;
+      background: #cba6f7;
+      color: #1e1e2e;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+    #search-btn:hover  { background: #b4befe; }
+    #search-btn:active { transform: scale(0.97); }
+
+    .hint { font-size: 0.82rem; color: #6c7086; margin-top: -8px; margin-bottom: 10px; }
+
+    /* Info cards */
+    #info-bar {
+      display: none;
+      flex-wrap: wrap;
+      gap: 12px;
+      width: min(960px, 95vw);
+      margin-bottom: 16px;
+      justify-content: center;
+    }
+    .card { background: #313244; border-radius: 10px; padding: 10px 20px; text-align: center; min-width: 110px; }
+    .card .label { font-size: 0.75rem; color: #a6adc8; margin-bottom: 4px; }
+    .card .value { font-size: 1.1rem; font-weight: 700; }
+    .card.up   .value { color: #f38ba8; }
+    .card.down .value { color: #a6e3a1; }
+
+    /* Period + predict buttons */
+    .period-bar {
+      display: none;
+      gap: 8px;
+      margin-bottom: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .period-btn {
+      padding: 6px 18px;
+      border: 2px solid #45475a;
+      border-radius: 20px;
+      background: transparent;
+      color: #a6adc8;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .period-btn:hover              { border-color: #cba6f7; color: #cdd6f4; }
+    .period-btn.active             { background: #cba6f7; border-color: #cba6f7; color: #1e1e2e; font-weight: 700; }
+
+    /* "未來一周" special button */
+    #predict-btn {
+      padding: 6px 20px;
+      border: 2px solid #f9e2af;
+      border-radius: 20px;
+      background: transparent;
+      color: #f9e2af;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    #predict-btn:hover  { background: #f9e2af; color: #1e1e2e; }
+    #predict-btn.active { background: #f9e2af; border-color: #f9e2af; color: #1e1e2e; font-weight: 700; }
+
+    /* Chart */
+    #chart-container { width: min(960px, 95vw); display: none; }
+
+    /* Prediction table */
+    #pred-table-wrap {
+      display: none;
+      width: min(960px, 95vw);
+      margin-top: 16px;
+    }
+    #pred-table-wrap table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    #pred-table-wrap th, #pred-table-wrap td {
+      padding: 8px 14px;
+      border-bottom: 1px solid #313244;
+      text-align: center;
+    }
+    #pred-table-wrap th { color: #a6adc8; font-weight: 600; background: #181825; }
+    #pred-table-wrap td.price-cell { color: #f9e2af; font-weight: 700; }
+
+    /* Algorithm explanation box */
+    #algo-box {
+      display: none;
+      width: min(960px, 95vw);
+      background: #181825;
+      border: 1px solid #313244;
+      border-radius: 12px;
+      padding: 20px 28px;
+      margin-top: 16px;
+      line-height: 1.75;
+      font-size: 0.88rem;
+    }
+    #algo-box h3 { color: #f9e2af; margin-bottom: 10px; font-size: 1rem; }
+    #algo-box .tag {
+      display: inline-block;
+      background: #313244;
+      color: #cba6f7;
+      border-radius: 6px;
+      padding: 2px 8px;
+      font-size: 0.78rem;
+      margin-right: 6px;
+    }
+    #algo-box ul { margin: 8px 0 0 18px; }
+    #algo-box li { margin-bottom: 4px; }
+    #algo-box .warn { color: #f38ba8; margin-top: 10px; font-size: 0.8rem; }
+
+    /* Error / loading */
+    #error-msg {
+      color: #f38ba8; background: #313244; border-radius: 10px;
+      padding: 14px 24px; display: none; margin-top: 10px;
+    }
+    #loading { display: none; color: #a6adc8; margin-top: 20px; font-size: 1rem; }
+    .spinner {
+      display: inline-block; width: 18px; height: 18px;
+      border: 3px solid #45475a; border-top-color: #cba6f7;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+      vertical-align: middle; margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    footer { margin: 24px 0 20px; color: #45475a; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📈 台灣股市趨勢查詢</h1>
+</header>
+
+<div class="search-section">
+  <input id="stock-input" type="text" placeholder="輸入股票編號，例如：2330" maxlength="10" autofocus />
+  <button id="search-btn">查詢</button>
+</div>
+<p class="hint">支援上市 (.TW) 及上櫃 (.TWO) 股票，按 Enter 或點選查詢</p>
+
+<div id="loading"><span class="spinner"></span><span id="loading-text">資料載入中，請稍候...</span></div>
+<div id="error-msg"></div>
+
+<div id="info-bar"></div>
+
+<div class="period-bar" id="period-bar">
+  <button class="period-btn" data-period="1m">1個月</button>
+  <button class="period-btn" data-period="3m">3個月</button>
+  <button class="period-btn active" data-period="1y">1年</button>
+  <button class="period-btn" data-period="3y">3年</button>
+  <button class="period-btn" data-period="5y">5年</button>
+  <button id="predict-btn">🔮 未來兩周</button>
+</div>
+
+<div id="chart-container"><div id="chart"></div></div>
+
+<div id="pred-table-wrap">
+  <table id="pred-table">
+    <thead>
+      <tr>
+        <th>日期</th>
+        <th>預測收盤價</th>
+        <th>95% 下界</th>
+        <th>95% 上界</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<div id="algo-box">
+  <h3>🤖 採用演算法說明 — Random Forest Regressor（隨機森林回歸）</h3>
+  <p>
+    <span class="tag">Ensemble</span>
+    <span class="tag">非線性</span>
+    <span class="tag">sklearn</span>
+  </p>
+  <ul>
+    <li><b>為何選擇隨機森林？</b> 股價走勢具有非線性特徵（支撐壓力、均線糾結），單一線性模型難以捕捉；Random Forest 由 300 棵決策樹投票取均值，能有效學習這些非線性規律，且不易過擬合。</li>
+    <li><b>特徵工程：</b> 以每日收盤價計算 5/10/20 日移動均線（MA）、1日/5日漲跌幅（Momentum）、前5日滯後收盤價（Lag1–Lag5）、近5日價格波動率（短期σ），共 11 個特徵。</li>
+    <li><b>訓練目標：</b> 用當日特徵預測「隔日收盤價」，以近一年（約 250 個交易日）歷史資料訓練。</li>
+    <li><b>遞迴預測：</b> 預測第1天後，將結果填回歷史序列，再依此算出第2天特徵，循環10次得到未來10個交易日預測值。</li>
+    <li><b>信賴區間：</b> 收集 300 棵樹各自的預測值，取均值 ± 1.96σ，形成 95% 預測區間（黃色帶狀區域）。</li>
+  </ul>
+  <p class="warn">⚠️ 免責聲明：股價受政經事件、市場情緒等影響，機器學習模型僅供參考，不構成任何投資建議。</p>
+</div>
+
+<footer>資料來源：Yahoo Finance &nbsp;|&nbsp; 預測模型：scikit-learn Random Forest</footer>
+
+<script>
+  const input = document.getElementById("stock-input");
+  let currentPeriod = "1y";
+  let currentStockId = "";
+
+  input.addEventListener("keydown", e => { if (e.key === "Enter") fetchStock(); });
+  document.getElementById("search-btn").addEventListener("click", fetchStock);
+
+  document.querySelectorAll(".period-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (!currentStockId) return;
+      currentPeriod = btn.dataset.period;
+      setActivePeriod(btn);
+      fetchStock();
+    });
+  });
+
+  document.getElementById("predict-btn").addEventListener("click", () => {
+    if (!currentStockId) return;
+    setActivePeriod(document.getElementById("predict-btn"), true);
+    fetchPrediction();
+  });
+
+  function setActivePeriod(activeEl, isPredictBtn = false) {
+    document.querySelectorAll(".period-btn").forEach(b => b.classList.remove("active"));
+    document.getElementById("predict-btn").classList.remove("active");
+    activeEl.classList.add("active");
+  }
+
+  function fetchStock() {
+    const id = input.value.trim();
+    if (!id) { showError("請輸入股票編號"); return; }
+    currentStockId = id;
+
+    // Reset predict-btn active state, restore current period
+    document.getElementById("predict-btn").classList.remove("active");
+    document.querySelectorAll(".period-btn").forEach(b => {
+      b.classList.toggle("active", b.dataset.period === currentPeriod);
+    });
+
+    setLoading(true, "資料載入中，請稍候...");
+    hideResults();
+
+    fetch(`/stock?id=${encodeURIComponent(id)}&period=${currentPeriod}`)
+      .then(r => r.json())
+      .then(data => {
+        setLoading(false);
+        if (data.error) { showError(data.error); return; }
+        renderInfo(data.info, data.name || id, id);
+        showPeriodBar();
+        renderChart(data.chart);
+        hidePredExtras();
+      })
+      .catch(() => { setLoading(false); showError("伺服器連線失敗，請稍後再試"); });
+  }
+
+  function fetchPrediction() {
+    setLoading(true, "模型訓練中，預測未來兩周... (約需 10–20 秒)");
+    hideResults();
+
+    fetch(`/predict?id=${encodeURIComponent(currentStockId)}`)
+      .then(r => r.json())
+      .then(data => {
+        setLoading(false);
+        if (data.error) { showError(data.error); return; }
+        showPeriodBar();
+        renderChart(data.chart);
+        renderPredTable(data.table);
+        document.getElementById("algo-box").style.display = "block";
+      })
+      .catch(() => { setLoading(false); showError("伺服器連線失敗，請稍後再試"); });
+  }
+
+  function renderInfo(info, name, stockId) {
+    const bar = document.getElementById("info-bar");
+    const isUp = info.change >= 0;
+    const sign = isUp ? "+" : "";
+    const cls  = isUp ? "up" : "down";
+    bar.innerHTML = `
+      <div class="card"><div class="label">股票</div><div class="value">${name}(${stockId})</div></div>
+      <div class="card"><div class="label">日期</div><div class="value">${info.date}</div></div>
+      <div class="card ${cls}"><div class="label">收盤價</div><div class="value">${info.close}</div></div>
+      <div class="card ${cls}"><div class="label">漲跌</div><div class="value">${sign}${info.change} (${sign}${info.change_pct}%)</div></div>
+      <div class="card"><div class="label">開盤</div><div class="value">${info.open}</div></div>
+      <div class="card"><div class="label">最高</div><div class="value">${info.high}</div></div>
+      <div class="card"><div class="label">最低</div><div class="value">${info.low}</div></div>
+      <div class="card"><div class="label">成交量</div><div class="value">${info.volume.toLocaleString()}</div></div>
+    `;
+    bar.style.display = "flex";
+  }
+
+  function renderChart(chartData) {
+    document.getElementById("chart-container").style.display = "block";
+    Plotly.newPlot("chart", chartData.data, chartData.layout, { responsive: true, displayModeBar: true });
+  }
+
+  function renderPredTable(table) {
+    const tbody = document.querySelector("#pred-table tbody");
+    tbody.innerHTML = table.map(r => `
+      <tr>
+        <td>${r.date}</td>
+        <td class="price-cell">${r.price}</td>
+        <td>${r.lower}</td>
+        <td>${r.upper}</td>
+      </tr>
+    `).join("");
+    document.getElementById("pred-table-wrap").style.display = "block";
+  }
+
+  function showPeriodBar() {
+    document.getElementById("period-bar").style.display = "flex";
+  }
+
+  function showError(msg) {
+    const el = document.getElementById("error-msg");
+    el.textContent = "⚠️ " + msg;
+    el.style.display = "block";
+  }
+
+  function hideResults() {
+    document.getElementById("error-msg").style.display = "none";
+    document.getElementById("info-bar").style.display = "none";
+    document.getElementById("chart-container").style.display = "none";
+    hidePredExtras();
+  }
+
+  function hidePredExtras() {
+    document.getElementById("pred-table-wrap").style.display = "none";
+    document.getElementById("algo-box").style.display = "none";
+  }
+
+  function setLoading(on, text = "") {
+    document.getElementById("loading").style.display = on ? "block" : "none";
+    if (text) document.getElementById("loading-text").textContent = text;
+  }
+</script>
+</body>
+</html>
